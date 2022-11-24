@@ -57,7 +57,7 @@ func (p Path) IsDirWhiteoutMount() bool {
 	var attr []byte
 	_, err := unix.Getxattr(dir, "trusted.overlay.opaque", attr)
 	if err != nil {
-		panic(err)
+		return false
 	}
 	if string(attr) == "y" {
 		return true
