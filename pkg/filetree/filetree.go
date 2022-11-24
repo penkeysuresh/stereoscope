@@ -773,7 +773,97 @@ func (t *FileTree) merge(upper *FileTree) error {
 	return tree.NewDepthFirstWalkerWithConditions(upper.Reader(), visitor, conditions).WalkAll()
 }
 
+// merge takes the given Tree and combines it with the current Tree, preferring files in the other Tree if there
+// are path conflicts. This is the basis function for squashing (where the current Tree is the bottom Tree and the
+// given Tree is the top Tree).
+// nolint:gocognit,funlen
+func (t *FileTree) mergeMount(upper *FileTree) error {
+	conditions := tree.WalkConditions{
+		ShouldContinueBranch: func(n node.Node) bool {
+			p := file.Path(n.ID())
+			return !p.IsWhiteoutMount()
+		},
+		ShouldVisit: func(n node.Node) bool {
+			p := file.Path(n.ID())
+			return !p.IsDirWhiteoutMount()
+		},
+	}
+
+	visitor := func(n node.Node) error {
+		if n == nil {
+			return fmt.Errorf("found nil Node while traversing %+v", upper)
+		}
+		upperNode := n.(*filenode.FileNode)
+		// opaque directories must be processed first
+		if upper.hasOpaqueDirectoryMount(upperNode.RealPath) {
+			err := t.RemoveChildPaths(upperNode.RealPath)
+			if err != nil {
+				return fmt.Errorf("filetree merge failed to remove child paths (upperPath=%s): %w", upperNode.RealPath, err)
+			}
+		}
+
+		if upperNode.RealPath.IsWhiteoutMount() {
+			lowerPath, err := upperNode.RealPath.UnWhiteoutPathMount()
+			if err != nil {
+				return fmt.Errorf("filetree merge failed to find original upperPath for whiteout (upperPath=%s): %w", upperNode.RealPath, err)
+			}
+
+			err = t.RemovePath(lowerPath)
+			if err != nil {
+				return fmt.Errorf("filetree merge failed to remove upperPath (upperPath=%s): %w", lowerPath, err)
+			}
+
+			return nil
+		}
+
+		lowerNode, err := t.node(upperNode.RealPath, linkResolutionStrategy{
+			FollowAncestorLinks: false,
+			FollowBasenameLinks: false,
+		})
+		if err != nil {
+			return fmt.Errorf("filetree merge failed when looking for path=%q : %w", upperNode.RealPath, err)
+		}
+		if lowerNode == nil {
+			// there is no existing Node... add parents and prepare to set
+			if err := t.addParentPaths(upperNode.RealPath); err != nil {
+				return fmt.Errorf("could not add parent paths to lower: %w", err)
+			}
+		}
+
+		nodeCopy := *upperNode
+
+		// keep original file references if the upper tree does not have them (only for the same file types)
+		if lowerNode != nil && lowerNode.Reference != nil && upperNode.Reference == nil && upperNode.FileType == lowerNode.FileType {
+			nodeCopy.Reference = lowerNode.Reference
+		}
+
+		if lowerNode != nil && upperNode.FileType != file.TypeDir && lowerNode.FileType == file.TypeDir {
+			// NOTE: both upperNode and lowerNode paths are the same, and does not have an effect
+			// on removal of child paths
+			err := t.RemoveChildPaths(upperNode.RealPath)
+			if err != nil {
+				return fmt.Errorf("filetree merge failed to remove children for non-directory upper node (%s): %w", upperNode.RealPath, err)
+			}
+		}
+		// graft a copy of the upper Node with potential lower information into the lower tree
+		if err := t.setFileNode(&nodeCopy); err != nil {
+			return fmt.Errorf("filetree merge failed to set file Node (Node=%+v): %w", nodeCopy, err)
+		}
+
+		return nil
+	}
+
+	// we are using the tree walker instead of the path walker to only look at an resolve merging of real files
+	// with no consideration to virtual paths (paths that are valid in the filetree because constituent paths
+	// contain symlinks).
+	return tree.NewDepthFirstWalkerWithConditions(upper.Reader(), visitor, conditions).WalkAll()
+}
+
 func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
 	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
 	return t.HasPath(opaqueWhiteoutChild)
+}
+
+func (t *FileTree) hasOpaqueDirectoryMount(directoryPath file.Path) bool {
+	panic("implement me")
 }

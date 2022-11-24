@@ -52,6 +52,16 @@ func (p Path) IsWhiteout() bool {
 	return strings.HasPrefix(p.Basename(), WhiteoutPrefix)
 }
 
+// IsDirWhiteoutMount indicates if the path has a basename is a opaque whiteout (which means all parent directory contents should be ignored during squashing)
+func (p Path) IsDirWhiteoutMount() bool {
+	panic("implement me")
+}
+
+// IsWhiteoutMount indicates if the file basename has a whiteout prefix (which means that the file should be removed during squashing)
+func (p Path) IsWhiteoutMount() bool {
+	panic("implement me")
+}
+
 // UnWhiteoutPath is a representation of the current path with no whiteout prefixes
 func (p Path) UnWhiteoutPath() (Path, error) {
 	basename := p.Basename()
@@ -63,6 +73,11 @@ func (p Path) UnWhiteoutPath() (Path, error) {
 		return "", err
 	}
 	return Path(path.Join(string(parent), strings.TrimPrefix(basename, WhiteoutPrefix))), nil
+}
+
+// UnWhiteoutPathMount is a representation of the current path with no whiteout prefixes
+func (p Path) UnWhiteoutPathMount() (Path, error) {
+	panic("implement me")
 }
 
 // ParentPath returns a path object to the current files parent directory (or errors out if there is no parent)
