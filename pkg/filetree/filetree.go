@@ -865,5 +865,6 @@ func (t *FileTree) hasOpaqueDirectory(directoryPath file.Path) bool {
 }
 
 func (t *FileTree) hasOpaqueDirectoryMount(directoryPath file.Path) bool {
-	panic("implement me")
+	opaqueWhiteoutChild := file.Path(path.Join(string(directoryPath), file.OpaqueWhiteout))
+	return t.HasPath(opaqueWhiteoutChild)
 }

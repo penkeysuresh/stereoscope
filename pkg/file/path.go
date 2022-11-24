@@ -2,7 +2,10 @@ package file
 
 import (
 	"fmt"
+	"golang.org/x/sys/unix"
+	"os"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,19 +50,42 @@ func (p Path) IsDirWhiteout() bool {
 	return p.Basename() == OpaqueWhiteout
 }
 
+// IsDirWhiteoutMount indicates if the path has a basename is a opaque whiteout (which means all parent directory contents should be ignored during squashing)
+func (p Path) IsDirWhiteoutMount() bool {
+	dir := filepath.Dir(string(p))
+
+	var attr []byte
+	_, err := unix.Getxattr(dir, "trusted.overlay.opaque", attr)
+	if err != nil {
+		panic(err)
+	}
+	if string(attr) == "y" {
+		return true
+	}
+	return false
+}
+
 // IsWhiteout indicates if the file basename has a whiteout prefix (which means that the file should be removed during squashing)
 func (p Path) IsWhiteout() bool {
 	return strings.HasPrefix(p.Basename(), WhiteoutPrefix)
 }
 
-// IsDirWhiteoutMount indicates if the path has a basename is a opaque whiteout (which means all parent directory contents should be ignored during squashing)
-func (p Path) IsDirWhiteoutMount() bool {
-	panic("implement me")
-}
-
 // IsWhiteoutMount indicates if the file basename has a whiteout prefix (which means that the file should be removed during squashing)
 func (p Path) IsWhiteoutMount() bool {
-	panic("implement me")
+	return isCharDevice(string(p))
+}
+
+// isCharDevice Determine if a path exist and is a character input device.
+func isCharDevice(path string) bool {
+	fi, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	m := fi.Mode()
+	if m&os.ModeCharDevice == 0 {
+		return false
+	}
+	return true
 }
 
 // UnWhiteoutPath is a representation of the current path with no whiteout prefixes
@@ -77,7 +103,16 @@ func (p Path) UnWhiteoutPath() (Path, error) {
 
 // UnWhiteoutPathMount is a representation of the current path with no whiteout prefixes
 func (p Path) UnWhiteoutPathMount() (Path, error) {
-	panic("implement me")
+	if p.IsDirWhiteoutMount() {
+		return p.ParentPath()
+	}
+
+	parent, err := p.ParentPath()
+	if err != nil {
+		return "", err
+	}
+	return Path(path.Join(string(parent))), nil
+
 }
 
 // ParentPath returns a path object to the current files parent directory (or errors out if there is no parent)
